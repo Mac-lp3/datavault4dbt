@@ -7,6 +7,10 @@
     PARSE_TIMESTAMP('{{ format }}', '{{ timestamp }}')
 {%- endmacro -%}
 
+{%- macro duckdb__string_to_timestamp(format, timestamp) -%}
+    STRPTIME('{{ timestamp }}', '{{ format }}')
+{%- endmacro -%}
+  
 {%- macro exasol__string_to_timestamp(format, timestamp) -%}
     TO_TIMESTAMP('{{ timestamp }}', '{{ format }}')
 {%- endmacro -%}
