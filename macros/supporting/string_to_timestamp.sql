@@ -12,7 +12,7 @@
 {%- endmacro -%}
   
 {%- macro exasol__string_to_timestamp(format, timestamp) -%}
-    TO_TIMESTAMP('{{ timestamp }}', '{{ format }}')
+   CAST(TO_TIMESTAMP('{{ timestamp }}', '{{ format }}') AS {{ datavault4dbt.timestamp_default_dtype() }})
 {%- endmacro -%}
 
 {%- macro snowflake__string_to_timestamp(format, timestamp) -%}
@@ -24,10 +24,21 @@
 {%- endmacro -%}
 
 {%- macro postgres__string_to_timestamp(format, timestamp) -%}
-    TO_TIMESTAMP('{{ timestamp }}', '{{ format }}')
+    CAST(TO_TIMESTAMP('{{ timestamp }}', '{{ format }}') AS {{ datavault4dbt.timestamp_default_dtype() }})
 {%- endmacro -%}
 
 {%- macro redshift__string_to_timestamp(format, timestamp) -%}
+    CAST(TO_TIMESTAMP('{{ timestamp }}', '{{ format }}') AS {{ datavault4dbt.timestamp_default_dtype() }})
+{%- endmacro -%}
+
+{%- macro fabric__string_to_timestamp(format, timestamp) -%}
+    CONVERT(datetime2(6), '{{ timestamp }}', {{ format }})
+{%- endmacro -%}
+
+{%- macro databricks__string_to_timestamp(format, timestamp) -%}
     TO_TIMESTAMP('{{ timestamp }}', '{{ format }}')
 {%- endmacro -%}
 
+{%- macro oracle__string_to_timestamp(format, timestamp) -%}
+    TO_TIMESTAMP('{{ timestamp }}', '{{ format }}')
+{%- endmacro -%}

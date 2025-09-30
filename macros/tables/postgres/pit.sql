@@ -1,7 +1,7 @@
-{%- macro postgres__pit(tracked_entity, hashkey, sat_names, ldts, ledts, sdts, snapshot_relation, dimension_key,snapshot_trigger_column=none, custom_rsrc=none, pit_type=none) -%}
+{%- macro postgres__pit(tracked_entity, hashkey, sat_names, ldts, ledts, sdts, snapshot_relation, dimension_key, refer_to_ghost_records, snapshot_trigger_column=none, custom_rsrc=none, pit_type=none) -%}
 
 {%- set hash = var('datavault4dbt.hash', 'MD5') -%}
-{%- set hash_dtype = var('datavault4dbt.hash_datatype', 'STRING') -%}
+{%- set hash_dtype = var('datavault4dbt.hash_datatype', 'VARCHAR(32)') -%}
 {%- set hash_default_values = fromjson(datavault4dbt.hash_default_values(hash_function=hash,hash_datatype=hash_dtype)) -%}
 {%- set hash_alg = hash_default_values['hash_alg'] -%}
 {%- set unknown_key = hash_default_values['unknown_key'] -%}
@@ -57,9 +57,14 @@ pit_records AS (
         te.{{ hashkey }},
         snap.{{ sdts }},
         {% for satellite in sat_names %}
+          {% if refer_to_ghost_records %}
             COALESCE({{ satellite }}.{{ hashkey }}, CAST({{ datavault4dbt.as_constant(column_str=unknown_key) }} as {{ hash_dtype }})) AS hk_{{ satellite }},
             COALESCE({{ satellite }}.{{ ldts }}, {{ datavault4dbt.string_to_timestamp(timestamp_format, beginning_of_all_times) }}) AS {{ ldts }}_{{ satellite }}
-            {{- "," if not loop.last }}
+          {% else %}
+            {{ satellite }}.{{ hashkey }} AS hk_{{ satellite }},
+            {{ satellite }}.{{ ldts }} AS {{ ldts }}_{{ satellite }}
+          {% endif %}
+        {{- "," if not loop.last }}
         {%- endfor %}
 
     FROM
@@ -80,7 +85,7 @@ pit_records AS (
             SELECT
                 {{ hashkey }},
                 {{ ldts }},
-                COALESCE(LEAD(TIMESTAMP_SUB({{ ldts }}, INTERVAL 1 MICROSECOND)) OVER (PARTITION BY {{ hashkey }} ORDER BY {{ ldts }}),{{ datavault4dbt.string_to_timestamp(timestamp_format, end_of_all_times) }}) AS {{ ledts }}
+                COALESCE(LEAD({{ ldts }} - INTERVAL '1 MICROSECOND') OVER (PARTITION BY {{ hashkey }} ORDER BY {{ ldts }}),{{ datavault4dbt.string_to_timestamp(timestamp_format, end_of_all_times) }}) AS {{ ledts }}
             FROM {{ ref(satellite) }}
         ) {{ satellite }}
         {% endif %}

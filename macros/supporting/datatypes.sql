@@ -3,9 +3,13 @@
 {%- endmacro -%}
 
 {%- macro default__type_timestamp() -%}
-    {{ type_timestamp() }}
+    {{ dbt.type_timestamp() }}
 {%- endmacro -%}
 
 {%- macro synapse__type_timestamp() -%}
     datetime2
+{%- endmacro -%}
+
+{%- macro fabric__type_timestamp() -%}
+    datetime2(6)
 {%- endmacro -%}

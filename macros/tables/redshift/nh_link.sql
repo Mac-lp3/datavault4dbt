@@ -1,16 +1,9 @@
-{%- macro redshift__nh_link(link_hashkey, foreign_hashkeys, payload, source_models, src_ldts, src_rsrc, disable_hwm, source_is_single_batch) -%}
-{%- if not (foreign_hashkeys is iterable and foreign_hashkeys is not string) -%}
+{%- macro redshift__nh_link(link_hashkey, foreign_hashkeys, payload, source_models, src_ldts, src_rsrc, disable_hwm, source_is_single_batch, union_strategy) -%}
 
-    {%- if execute -%}
-        {{ exceptions.raise_compiler_error("Only one foreign key provided for this link. At least two required.") }}
-    {%- endif %}
-
-{%- endif -%}
 {%- set ns = namespace(last_cte= "", source_included_before = {}, has_rsrc_static_defined=true, source_models_rsrc_dict={}) -%}
 
 {%- set end_of_all_times = datavault4dbt.end_of_all_times() -%}
 {%- set timestamp_format = datavault4dbt.timestamp_format() -%}
-
 
 {# If no specific link_hk, fk_columns, or payload are defined for each source, we apply the values set in the link_hashkey, foreign_hashkeys, and payload variable. #}
 {# If no rsrc_static parameter is defined in ANY of the source models then the whole code block of record_source performance lookup is not executed  #}
@@ -21,10 +14,31 @@
 
 {%- set source_model_values = fromjson(datavault4dbt.source_model_processing(source_models=source_models, parameters={'link_hk':link_hashkey}, foreign_hashkeys=foreign_hashkeys, payload=payload)) -%}
 {%- set source_models = source_model_values['source_model_list'] -%}
+{#This loop goes through each source_model in the source_models list. For each model, it uses the ref() function to establish dependencies for dbt to track the relationships between models..#}
+{%- for source_model in source_models -%}
+    {%- set source_relation = ref(source_model.name) -%}
+{%- endfor -%}
+
+{%- if execute -%}
+
 {%- set ns.has_rsrc_static_defined = source_model_values['has_rsrc_static_defined'] -%}
 {%- set ns.source_models_rsrc_dict = source_model_values['source_models_rsrc_dict'] -%}
 {{ log('source_models: '~source_models, false) }}
 
+{% if union_strategy|lower == 'all' %}
+    {% set union_command = 'UNION ALL' %}
+{% elif union_strategy|lower == 'distinct' %}
+    {% set union_command = 'UNION' %}
+{% else %}
+    {%- if execute -%}
+        {%- do exceptions.warn("[" ~ this ~ "] Warning: Parameter 'union_strategy' set to '" ~ union_strategy ~ "' which is not a supported choice. Set to 'all' or 'distinct' instead. UNION ALL is used now.") -%}
+    {% endif %}
+    {% set union_command = 'UNION ALL' %}
+{% endif %}
+
+{%- if not datavault4dbt.is_something(foreign_hashkeys) -%}
+    {%- set foreign_hashkeys = [] -%}
+{%- endif -%}
 {%- set final_columns_to_select = [link_hashkey] + foreign_hashkeys + [src_ldts] + [src_rsrc] + payload -%}
 
 {{ datavault4dbt.prepend_generated_by() }}
@@ -209,7 +223,7 @@ source_new_union AS (
     FROM src_new_{{ source_number }}
 
     {%- if not loop.last %}
-    UNION ALL
+    {{ union_command }}
     {% endif -%}
 
     {%- endfor -%}
@@ -222,21 +236,17 @@ source_new_union AS (
 
 {%- if not source_is_single_batch %}
 
-earliest_hk_over_all_sources_prep AS (
-    SELECT
-        lcte.*,
-        ROW_NUMBER() OVER (PARTITION BY {{ link_hashkey }} ORDER BY {{ src_ldts
-        }}) as rn
-    FROM {{ ns.last_cte }} AS lcte),
-
 earliest_hk_over_all_sources AS (
 
-    {#- Deduplicate the unionized records again to only insert the earliest one. #}
+{#- Deduplicate the unionized records again to only insert the earliest one. #}
     SELECT
         lcte.*
-    FROM earliest_hk_over_all_sources_prep AS lcte
-        WHERE rn = 1
-    {%- set ns.last_cte = 'earliest_hk_over_all_sources' -%}),
+    FROM {{ ns.last_cte }} AS lcte
+    QUALIFY ROW_NUMBER() OVER (PARTITION BY {{ link_hashkey }} ORDER BY {{ src_ldts }}) = 1
+
+    {%- set ns.last_cte = 'earliest_hk_over_all_sources' -%}
+
+),
 
 {%- endif %}
 
@@ -249,10 +259,12 @@ records_to_insert AS (
 
     {%- if is_incremental() %}
     WHERE NOT EXISTS (SELECT 1 FROM distinct_target_hashkeys 
-                WHERE distinct_target_hashkeys.{{ link_hashkey }} = earliest_hk_over_all_sources.{{ link_hashkey }})
+                WHERE distinct_target_hashkeys.{{ link_hashkey }} = {{ ns.last_cte }}.{{ link_hashkey }})
     {% endif %}
 )
 
 SELECT * FROM records_to_insert
+
+{% endif %}
 
 {%- endmacro -%}
