@@ -9,8 +9,8 @@
 {%- set rsrc_error = var('datavault4dbt.default_error_rsrc', 'ERROR') -%}
 
 {# Setting the rsrc and stg_alias default datatype and length #}
-{%- set rsrc_default_dtype = datavault4dbt.string_default_dtype(type='rsrc') -%}
-{%- set stg_default_dtype = datavault4dbt.string_default_dtype(type='stg') -%}
+{%- set rsrc_default_dtype = var('datavault4dbt.rsrc_default_dtype', 'STRING') -%}
+{%- set stg_default_dtype = var('datavault4dbt.stg_default_dtype', 'STRING') -%}
 {%- set ns = namespace(last_cte = '', source_included_before = {},  source_models_rsrc_dict={},  has_rsrc_static_defined=true) -%}
 
 {%- if source_models is not mapping and not datavault4dbt.is_list(source_models) -%}
@@ -59,7 +59,7 @@ WITH
                         UNION ALL
                     {% endif -%}
                 {%- endfor -%}
-                ) AS test
+                )
             {% endset %}
 
             {%- set rsrc_static_query_source -%}
@@ -81,7 +81,7 @@ WITH
             {%- set source_in_target = true -%}
             
             {%- if execute -%}
-                {%- set rsrc_static_result = run_query(rsrc_static_query_source_count) -%}
+                {%- set rsrc_static_result = run_query(rsrc_static_query_source) -%}
 
                 {%- set row_count = rsrc_static_result.columns[0].values()[0] -%}
 
@@ -214,7 +214,7 @@ records_to_insert AS (
     WHERE {{ src_ldts }} != {{ datavault4dbt.string_to_timestamp(timestamp_format, end_of_all_times) }} 
     AND {{ src_ldts }} != {{ datavault4dbt.string_to_timestamp(timestamp_format, beginning_of_all_times) }}
     {%- if is_incremental() %}
-        AND NOT EXISTS(SELECT 1 from distinct_concated_target where {{ datavault4dbt.concat_ws(concat_columns) }} = distinct_concated_target.concat)
+        AND {{ datavault4dbt.concat_ws(concat_columns) }} NOT IN (SELECT * FROM distinct_concated_target)
     {% endif %}
 )
 

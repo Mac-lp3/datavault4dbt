@@ -1,4 +1,4 @@
-{%- macro duckdb__hub(hashkey, business_keys, src_ldts, src_rsrc, source_models, disable_hwm) -%}
+{%- macro duckdb__hub(hashkey, business_keys, src_ldts, src_rsrc, source_models, disable_hwm, additional_columns) -%}
 
 {%- set end_of_all_times = datavault4dbt.end_of_all_times() -%}
 {%- set timestamp_format = datavault4dbt.timestamp_format() -%}
@@ -9,6 +9,10 @@
 
 {# Select the Business Key column from the first source model definition provided in the hub model and put them in an array. #}
 {%- set business_keys = datavault4dbt.expand_column_list(columns=[business_keys]) -%}
+
+{# Select the additional_columns from the hub model and put them in an array. If additional_colums none, then empty array #}
+{%- set additional_columns = additional_columns | default([],true) -%}
+{%- set additional_columns = [additional_columns] if additional_columns is string else additional_columns -%}
 
 {# If no specific bk_columns is defined for each source, we apply the values set in the business_keys variable. #}
 {# If no specific hk_column is defined for each source, we apply the values set in the hashkey variable. #}
@@ -24,7 +28,7 @@
 {%- set ns.source_models_rsrc_dict = source_model_values['source_models_rsrc_dict'] -%}
 {{ log('source_models: '~source_models, false) }}
 
-{%- set final_columns_to_select = [hashkey] + business_keys + [src_ldts] + [src_rsrc] -%}
+{%- set final_columns_to_select = [hashkey] + business_keys + [src_ldts] + [src_rsrc] + additional_columns  -%}
 
 {{ datavault4dbt.prepend_generated_by() }}
 
@@ -58,7 +62,7 @@ WITH
                         UNION ALL
                     {% endif -%}
                 {%- endfor -%}
-                )
+                ) As test
             {% endset %}
 
             {{ log('rsrc static query: '~rsrc_static_query_source, false) }}
@@ -147,7 +151,11 @@ WITH
         SELECT
             {{ hk_column }} AS {{ hashkey }},
             {% for bk in source_model['bk_columns'] -%}
-            {{ bk }},
+            {{ bk }} AS {{ business_keys[loop.index - 1] }},
+            {% endfor -%}
+
+            {% for col in additional_columns -%}
+            {{ col }},
             {% endfor -%}
 
             {{ src_ldts }},
@@ -188,7 +196,11 @@ source_new_union AS (
         {{ hashkey }},
 
         {% for bk in source_model['bk_columns'] -%}
-            {{ bk }} AS {{ business_keys[loop.index - 1] }},
+            {{ business_keys[loop.index - 1] }},
+        {% endfor -%}
+
+        {% for col in additional_columns -%}
+            {{ col }},
         {% endfor -%}
 
         {{ src_ldts }},
@@ -207,18 +219,21 @@ source_new_union AS (
 
 {%- endif %}
 
+earliest_hk_over_all_sources_prep AS (
+    SELECT
+        lcte.*,
+        ROW_NUMBER() OVER (PARTITION BY {{ hashkey }} ORDER BY {{ src_ldts
+        }}) as rn
+    FROM {{ ns.last_cte }} AS lcte),
+
 earliest_hk_over_all_sources AS (
 
     {#- Deduplicate the unionized records again to only insert the earliest one. #}
     SELECT
         lcte.*
-    FROM {{ ns.last_cte }} AS lcte
-
-    QUALIFY ROW_NUMBER() OVER (PARTITION BY {{ hashkey }} ORDER BY {{ src_ldts }}) = 1
-
-    {%- set ns.last_cte = 'earliest_hk_over_all_sources' -%}
-
-),
+    FROM earliest_hk_over_all_sources_prep AS lcte
+        WHERE rn = 1
+    {%- set ns.last_cte = 'earliest_hk_over_all_sources' -%}),
 
 records_to_insert AS (
     {#- Select everything from the previous CTE, if incremental filter for hashkeys that are not already in the hub. #}
@@ -227,7 +242,8 @@ records_to_insert AS (
     FROM {{ ns.last_cte }}
 
     {%- if is_incremental() %}
-    WHERE {{ hashkey }} NOT IN (SELECT * FROM distinct_target_hashkeys)
+    WHERE NOT EXISTS (SELECT 1 FROM distinct_target_hashkeys 
+                    WHERE distinct_target_hashkeys.{{ hashkey }} = earliest_hk_over_all_sources.{{ hashkey }})
     {% endif -%}
 )
 

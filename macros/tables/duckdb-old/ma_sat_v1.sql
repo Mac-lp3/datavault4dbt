@@ -41,7 +41,7 @@ end_dated_loads AS (
     SELECT
         {{ hashkey }},
         {{ src_ldts }},
-        COALESCE(LEAD({{ src_ldts }} - INTERVAL '00:00:00.000001') OVER (PARTITION BY {{ hashkey }} ORDER BY {{ src_ldts }}),{{ datavault4dbt.string_to_timestamp(timestamp_format,end_of_all_times) }}) as {{ ledts_alias }}
+        COALESCE(LEAD({{ src_ldts }} - INTERVAL '1 MICROSECOND') OVER (PARTITION BY {{ hashkey }} ORDER BY {{ src_ldts }}),{{ datavault4dbt.string_to_timestamp(timestamp_format,end_of_all_times) }}) as {{ ledts_alias }}
     FROM distinct_hk_ldts
 
 ),
@@ -57,8 +57,8 @@ end_dated_source AS (
         edl.{{ ledts_alias }},
         {%- if add_is_current_flag %}
             CASE WHEN {{ ledts_alias }} = {{ datavault4dbt.string_to_timestamp(timestamp_format, end_of_all_times) }}
-            THEN TRUE
-            ELSE FALSE
+              THEN TRUE
+              ELSE FALSE
             END AS {{ is_current_col_alias }},
         {% endif %}
         {{- datavault4dbt.print_list(ma_attributes, indent=10, src_alias='src') }},

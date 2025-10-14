@@ -1,17 +1,11 @@
-{%- macro duckdb__pit(tracked_entity, hashkey, sat_names, ldts, ledts, sdts, snapshot_relation, dimension_key, refer_to_ghost_records, snapshot_trigger_column=none, custom_rsrc=none, pit_type=none) -%}
+{%- macro duckdb__pit(tracked_entity, hashkey, sat_names, ldts, ledts, sdts, snapshot_relation, dimension_key,snapshot_trigger_column=none, custom_rsrc=none, pit_type=none) -%}
 
-{%- set hash = var('datavault4dbt.hash', 'MD5') -%}
-{%- set hash_dtype = var('datavault4dbt.hash_datatype', 'VARCHAR(32)') -%}
+{%- set hash = datavault4dbt.hash_method() -%}
+{%- set hash_dtype = var('datavault4dbt.hash_datatype', 'STRING') -%}
 {%- set hash_default_values = fromjson(datavault4dbt.hash_default_values(hash_function=hash,hash_datatype=hash_dtype)) -%}
 {%- set hash_alg = hash_default_values['hash_alg'] -%}
 {%- set unknown_key = hash_default_values['unknown_key'] -%}
 {%- set error_key = hash_default_values['error_key'] -%}
-
-{%- if hash_dtype == 'BYTES' -%}
-    {%- set hashkey_string = 'TO_HEX({})'.format(datavault4dbt.prefix([hashkey],'te')) -%}
-{%- else -%}
-    {%- set hashkey_string = datavault4dbt.prefix([hashkey],'te') -%}
-{%- endif -%}
 
 {%- set rsrc = var('datavault4dbt.rsrc_alias', 'rsrc') -%}
 
@@ -20,9 +14,11 @@
 {%- set timestamp_format = datavault4dbt.timestamp_format() -%}
 
 {%- if datavault4dbt.is_something(pit_type) -%}
-    {%- set hashed_cols = [pit_type, hashkey_string, datavault4dbt.prefix([sdts], 'snap')] -%}
+    {%- set quote = "'" -%}
+    {%- set pit_type_quoted = quote + pit_type + quote -%}
+    {%- set hashed_cols = [pit_type_quoted, datavault4dbt.prefix([hashkey],'te'), datavault4dbt.prefix([sdts], 'snap')] -%}
 {%- else -%}
-    {%- set hashed_cols = [hashkey_string, datavault4dbt.prefix([sdts], 'snap')] -%}
+    {%- set hashed_cols = [datavault4dbt.prefix([hashkey],'te'), datavault4dbt.prefix([sdts], 'snap')] -%}
 {%- endif -%}
 
 {{ datavault4dbt.prepend_generated_by() }}
@@ -56,15 +52,10 @@ pit_records AS (
                     is_hashdiff=false)   }} ,
         te.{{ hashkey }},
         snap.{{ sdts }},
-        {% for satellite in sat_names %}
-          {% if refer_to_ghost_records %}
+        {%- for satellite in sat_names %}
             COALESCE({{ satellite }}.{{ hashkey }}, CAST({{ datavault4dbt.as_constant(column_str=unknown_key) }} as {{ hash_dtype }})) AS hk_{{ satellite }},
             COALESCE({{ satellite }}.{{ ldts }}, {{ datavault4dbt.string_to_timestamp(timestamp_format, beginning_of_all_times) }}) AS {{ ldts }}_{{ satellite }}
-          {% else %}
-            {{ satellite }}.{{ hashkey }} AS hk_{{ satellite }},
-            {{ satellite }}.{{ ldts }} AS {{ ldts }}_{{ satellite }}
-          {% endif %}
-        {{- "," if not loop.last }}
+            {{- "," if not loop.last }}
         {%- endfor %}
 
     FROM
@@ -93,7 +84,7 @@ pit_records AS (
                 {{ satellite }}.{{ hashkey}} = te.{{ hashkey }}
                 AND snap.{{ sdts }} BETWEEN {{ satellite }}.{{ ldts }} AND {{ satellite }}.{{ ledts }}
         {% endfor %}
-    {% if datavault4dbt.is_something(snapshot_trigger_column) -%}
+    {% if datavault4dbt.is_something(snapshot_trigger_column) %}
         WHERE snap.{{ snapshot_trigger_column }}
     {%- endif %}
 
@@ -104,8 +95,7 @@ records_to_insert AS (
     SELECT DISTINCT *
     FROM pit_records
     {%- if is_incremental() %}
-    WHERE NOT EXISTS (SELECT 1 FROM existing_dimension_keys 
-                        WHERE existing_dimension_keys.{{ dimension_key }} = pit_records.{{ dimension_key }})
+    WHERE {{ dimension_key }} NOT IN (SELECT * FROM existing_dimension_keys)
     {% endif -%}
 
 )

@@ -4,6 +4,7 @@
 {%- set timestamp_format = datavault4dbt.timestamp_format() -%}
 
 {%- set is_current_col_alias = var('datavault4dbt.is_current_col_alias', 'IS_CURRENT') -%}
+{%- set ledts_alias = var('datavault4dbt.ledts_alias', 'ledts') -%}
 
 {%- set source_relation = ref(ref_sat_v0) -%}
 
@@ -28,7 +29,7 @@ end_dated_source AS (
         {{ hashdiff }},
         {{ src_rsrc }},
         {{ src_ldts }},
-        COALESCE(LEAD({{ src_ldts }}- INTERVAL '00:00:00.000001') OVER (PARTITION BY {%- for ref_key in ref_keys %} {{ref_key}} {%- if not loop.last %}, {% endif %}{% endfor %} ORDER BY {{ src_ldts }}),{{ datavault4dbt.string_to_timestamp(timestamp_format, end_of_all_times) }}) as {{ ledts_alias }},
+        COALESCE(LEAD({{ src_ldts }} - INTERVAL '1 MICROSECOND') OVER (PARTITION BY {%- for ref_key in ref_keys %} {{ref_key}} {%- if not loop.last %}, {% endif %}{% endfor %} ORDER BY {{ src_ldts }}),{{ datavault4dbt.string_to_timestamp(timestamp_format, end_of_all_times) }}) as {{ ledts_alias }},
         {{ datavault4dbt.print_list(source_columns_to_select) }}
     FROM {{ source_relation }}
 

@@ -1,27 +1,24 @@
 {%- macro duckdb__control_snap_v0(start_date, daily_snapshot_time, sdts_alias, end_date=none) -%}
 
-{% if datavault4dbt.is_nothing(end_date) %}
-  {% set end_date = 'CURRENT_TIMESTAMP' %}
-{% else %}
-    {% set end_date = "'"~end_date~"'::timestamp + Interval '1 day'" %}
-{% endif %}
 {%- set timestamp_format = datavault4dbt.timestamp_format() -%}
+{%- set start_date = start_date | replace('00:00:00', daily_snapshot_time) -%}
 
-{%- if not datavault4dbt.is_something(sdts_alias) -%}
-    {%- set sdts_alias = var('datavault4dbt.sdts_alias', 'sdts') -%}
-{%- endif -%}
-
-WITH
+WITH 
 
 initial_timestamps AS (
     
     SELECT
-        sdts::timestamp
+        DATEADD(DAY, SEQ4(), 
+        TIMESTAMPADD(SECOND, EXTRACT(SECOND FROM TO_TIME('{{ daily_snapshot_time }}')), 
+            TIMESTAMPADD(MINUTE, EXTRACT(MINUTE FROM TO_TIME('{{ daily_snapshot_time }}')), 
+                TIMESTAMPADD(HOUR, EXTRACT(HOUR FROM TO_TIME('{{ daily_snapshot_time }}')), TO_DATE('{{ start_date }}', 'YYYY-MM-DD')))
+                ))::TIMESTAMP AS sdts
     FROM 
-        generate_series(timestamp '{{ start_date }} {{ daily_snapshot_time }}', {{ end_date }}, Interval '1 day') AS sdts(day)
+        TABLE(GENERATOR(ROWCOUNT => 100000))
+    WHERE 
+        sdts <= CURRENT_TIMESTAMP
     {%- if is_incremental() %}
-    WHERE
-        sdts > (SELECT MAX({{ sdts_alias }}) FROM {{ this }})
+    AND sdts > (SELECT MAX({{ sdts_alias }}) FROM {{ this }})
     {%- endif %}
 
 ),
@@ -31,29 +28,29 @@ enriched_timestamps AS (
     SELECT
         sdts as {{ sdts_alias }},
         TRUE as force_active,
-        sdts as replacement_sdts,
-        CONCAT('Snapshot ', DATE(sdts)) as caption,
+        sdts AS replacement_sdts,
+        CONCAT('Snapshot ', DATE(sdts)) AS caption,
         CASE
             WHEN EXTRACT(MINUTE FROM sdts) = 0 AND EXTRACT(SECOND FROM sdts) = 0 THEN TRUE
             ELSE FALSE
-        END as is_hourly,
+        END AS is_hourly,
         CASE
             WHEN EXTRACT(MINUTE FROM sdts) = 0 AND EXTRACT(SECOND FROM sdts) = 0 AND EXTRACT(HOUR FROM sdts) = 0 THEN TRUE
             ELSE FALSE
-        END as is_daily,
+        END AS is_daily,
         CASE
-            WHEN EXTRACT(isodow FROM  sdts) = 1 THEN TRUE
+            WHEN EXTRACT(DAYOFWEEK FROM  sdts) = 1 THEN TRUE
             ELSE FALSE
-        END as is_weekly,
+        END AS is_weekly,
         CASE
             WHEN EXTRACT(DAY FROM sdts) = 1 THEN TRUE
             ELSE FALSE
-        END as is_monthly,
+        END AS is_monthly,
         CASE
             WHEN EXTRACT(DAY FROM sdts) = 1 AND EXTRACT(MONTH FROM sdts) = 1 THEN TRUE
             ELSE FALSE
-        END as is_yearly,
-        NULL as comment
+        END AS is_yearly,
+        NULL AS comment
     FROM initial_timestamps
 
 )

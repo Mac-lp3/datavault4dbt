@@ -7,10 +7,6 @@
     PARSE_TIMESTAMP('{{ format }}', '{{ timestamp }}')
 {%- endmacro -%}
 
-{%- macro duckdb__string_to_timestamp(format, timestamp) -%}
-    STRPTIME('{{ timestamp }}', '{{ format }}')
-{%- endmacro -%}
-  
 {%- macro exasol__string_to_timestamp(format, timestamp) -%}
    CAST(TO_TIMESTAMP('{{ timestamp }}', '{{ format }}') AS {{ datavault4dbt.timestamp_default_dtype() }})
 {%- endmacro -%}
@@ -21,6 +17,10 @@
 
 {%- macro synapse__string_to_timestamp(format, timestamp) -%}
     CONVERT(datetime2, '{{ timestamp }}', {{ format }})
+{%- endmacro -%}
+
+{%- macro duckdb__string_to_timestamp(format, timestamp) -%}
+    CAST(TO_TIMESTAMP('{{ timestamp }}', '{{ format }}') AS {{ datavault4dbt.timestamp_default_dtype() }})
 {%- endmacro -%}
 
 {%- macro postgres__string_to_timestamp(format, timestamp) -%}

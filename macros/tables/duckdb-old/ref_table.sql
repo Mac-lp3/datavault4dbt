@@ -59,7 +59,7 @@ dates AS (
     WHERE {{ src_ldts }} != {{ datavault4dbt.string_to_timestamp(timestamp_format, end_of_all_times) }}
     {% if not loop.last -%} UNION {% endif %}
     {%- endfor %}
-    ) AS TEST
+    )
 
 
 {% elif snapshot_relation is not none %}
@@ -74,11 +74,7 @@ dates AS (
             {{ sdts_alias }}
         FROM {{ ref(snapshot_relation) }}
         WHERE {{ snapshot_trigger_column }}
-    ) AS TEST 
-
-{#
-Caus of whitespace control 
-#}
+    )
 
 {%- endif %}
 
@@ -137,7 +133,7 @@ ref_table AS (
         AND  ld.{{ date_column }} BETWEEN {{ sat_alias }}.{{ src_ldts }} AND {{ sat_alias }}.{{ ledts_alias }}
     
     {% endfor %}
-    
+
     {% if include_business_objects_before_appearance == 'false' -%}
     WHERE h.{{ src_ldts }} <= ld.{{ date_column }}
     {% endif %}
