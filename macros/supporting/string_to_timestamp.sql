@@ -20,7 +20,7 @@
 {%- endmacro -%}
 
 {%- macro duckdb__string_to_timestamp(format, timestamp) -%}
-    CAST(TO_TIMESTAMP('{{ timestamp }}', '{{ format }}') AS {{ datavault4dbt.timestamp_default_dtype() }})
+    CAST(STRPTIME('{{ timestamp }}', '{{ format }}') AS {{ datavault4dbt.timestamp_default_dtype() }})
 {%- endmacro -%}
 
 {%- macro postgres__string_to_timestamp(format, timestamp) -%}
