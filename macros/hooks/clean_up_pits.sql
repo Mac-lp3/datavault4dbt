@@ -86,6 +86,18 @@ WHERE snap.{{ sdts }} IS NULL
 {%- endmacro -%}
 
 
+{%- macro duckdb__clean_up_pit(snapshot_relation, snapshot_trigger_column, sdts) -%}
+
+DELETE FROM {{ this }} pit
+WHERE NOT EXISTS (SELECT 1 FROM {{ ref(snapshot_relation) }} snap WHERE pit.{{ sdts }} = snap.{{ sdts }} AND snap.{{ snapshot_trigger_column }}=TRUE)
+
+{%- if execute -%}
+{{ log("PIT " ~ this ~ " successfully cleaned!", True) }}
+{%- endif -%}
+
+{%- endmacro -%}
+
+
 {%- macro postgres__clean_up_pit(snapshot_relation, snapshot_trigger_column, sdts) -%}
 
 DELETE FROM {{ this }} pit
