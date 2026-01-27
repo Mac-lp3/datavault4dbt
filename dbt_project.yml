@@ -1,6 +1,6 @@
 name: datavault4dbt
-version: 1.4.1
-require-dbt-version: [">=1.0.0", "<2.0.0"]
+version: 1.13.0
+require-dbt-version: [">=1.0.0", "<3.0.0"]
 config-version: 2
 
 # This setting configures which "profile" dbt uses for this project.
@@ -43,8 +43,8 @@ vars:
   datavault4dbt.end_of_all_times_date: { "bigquery": "8888-12-31", "snowflake": "8888-12-31", "exasol": "8888-12-31", "postgres": "8888-12-31", "redshift": "8888-12-31", "synapse": "8888-12-31", "fabric": "8888-12-31", "oracle": "8888-12-31", "databricks": "8888-12-31", }
   datavault4dbt.date_format: { "bigquery": "%Y-%m-%d", "snowflake": "YYYY-MM-DD", "exasol": "YYYY-mm-dd", "duckdb": "%Y-%m-%d", "postgres": "YYYY-MM-DD", "redshift": "YYYY-MM-DD", "synapse": "yyyy-MM-dd", "fabric": "yyyy-mm-dd", "oracle": "YYYY-MM-DD", "databricks": "yyyy-mm-dd", }
 
-  datavault4dbt.default_unknown_rsrc: "SYSTEM"
-  datavault4dbt.default_error_rsrc: "ERROR"
+  datavault4dbt.default_unknown_rsrc: 'SYSTEM'
+  datavault4dbt.default_error_rsrc: 'ERROR'
 
   datavault4dbt.rsrc_default_dtype: { "bigquery": "STRING", "snowflake": "VARCHAR", "exasol": "VARCHAR (2000000) UTF8", "duckdb": "VARCHAR", "postgres": "VARCHAR", "redshift": "VARCHAR", "synapse": "VARCHAR", "fabric": "VARCHAR(255)", "oracle": "VARCHAR2(40)", "databricks": "STRING", }
   datavault4dbt.timestamp_default_dtype: { "bigquery": "TIMESTAMP", "snowflake": "TIMESTAMP_TZ", "exasol": "TIMESTAMP(3) WITH LOCAL TIME ZONE", "duckdb": "TIMESTAMPTZ", "postgres": "TIMESTAMPTZ", "redshift": "TIMESTAMPTZ", "synapse": "datetimeoffset", "fabric": "datetime2(6)", "oracle": "TIMESTAMP WITH TIME ZONE", "databricks": "TIMESTAMP", }
@@ -52,12 +52,14 @@ vars:
   datavault4dbt.derived_columns_default_dtype: { "bigquery": "STRING", "snowflake": "VARCHAR", "exasol": "VARCHAR (2000000) UTF8", "duckdb": "VARCHAR", "postgres": "VARCHAR", "redshift": "VARCHAR", "synapse": "VARCHAR", "fabric": "VARCHAR(255)", "oracle": "VARCHAR2(40)", "databricks": "STRING", }
 
   #Datatype specific default values
-  datavault4dbt.error_value__STRING: "(error)"
-  datavault4dbt.error_value_alt__STRING: "e"
-  datavault4dbt.unknown_value__STRING: "(unknown)"
-  datavault4dbt.unknown_value_alt__STRING: "u"
-  datavault4dbt.unknown_value__numeric: "-1"
-  datavault4dbt.error_value__numeric: "-2"
+  datavault4dbt.error_value__STRING: '(error)'
+  datavault4dbt.error_value_alt__STRING: 'e'
+  datavault4dbt.unknown_value__STRING: '(unknown)'
+  datavault4dbt.unknown_value_alt__STRING: 'u'
+  datavault4dbt.unknown_value__numeric: '-1'
+  datavault4dbt.error_value__numeric: '-2'
+
+  datavault4dbt.oracle_varchar_size: '32767'
 
   #Premium package value
   datavault4dbt.use_premium_package: False
