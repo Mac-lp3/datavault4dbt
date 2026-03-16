@@ -233,7 +233,7 @@
 {%- endmacro -%}    
 
 
-{%- macro duckdb__hash(columns, alias, is_hashdiff, multi_active_key, main_hashkey_column) -%}
+{%- macro duckdb__hash(columns, alias, is_hashdiff, multi_active_key, main_hashkey_column, use_trim) -%}
 
 
 {%- set hash = var('datavault4dbt.hash', 'MD5') -%}

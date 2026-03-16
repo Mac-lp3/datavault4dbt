@@ -44,7 +44,7 @@ CONCAT('\"', REPLACE(REPLACE(REPLACE({{ expr }}, '\\', '\\\\'), '[QUOTE]', '\"')
 
 {%- endmacro -%}  
 
-{%- macro duckdb__attribute_standardise(hash_type) -%}
+{%- macro duckdb__attribute_standardise(hash_type, use_trim) -%}
 
 {% if hash_type == 'hashkey' %}
 
