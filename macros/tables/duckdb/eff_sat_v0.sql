@@ -1,4 +1,4 @@
-{%- macro duckdb__eff_sat_v0(source_model, tracked_hashkey, src_ldts, src_rsrc, is_active_alias, source_is_single_batch, disable_hwm) -%}
+{%- macro duckdb__eff_sat_v0(source_model, tracked_hashkey, src_ldts, src_rsrc, is_active_alias, source_is_single_batch, disable_hwm, additional_columns) -%}
 
 {%- set end_of_all_times = datavault4dbt.end_of_all_times() -%}
 {%- set timestamp_format = datavault4dbt.timestamp_format() -%}
@@ -6,6 +6,10 @@
 {%- set ns = namespace(last_cte= "") -%}
 
 {%- set source_relation = ref(source_model) -%}
+
+{# Select the additional_columns and put them in an array. If additional_colums is none, then empty array #}
+{%- set additional_columns = additional_columns | default([],true) -%}
+{%- set additional_columns = [additional_columns] if additional_columns is string else additional_columns -%}
 
 {%- set tracked_hashkey = datavault4dbt.escape_column_names(tracked_hashkey) -%}
 {%- set is_active_alias = datavault4dbt.escape_column_names(is_active_alias) -%}
@@ -16,14 +20,12 @@
 
 {%- set is_active_datatype = var('datavault4dbt.is_active_datatype', 'Boolean') -%}
 
-{{ log('columns to select: '~final_columns_to_select, false) }}
-
 {{ datavault4dbt.prepend_generated_by() }}
 
-WITH 
+WITH
 
 {#
-    In all cases, the source model is selected, and optionally a HWM is applied. 
+    In all cases, the source model is selected, and optionally a HWM is applied.
 #}
 {% if is_incremental() and not disable_hwm %}
 max_ldts_prep AS (
@@ -39,6 +41,9 @@ source_data AS (
 
     SELECT
         {{ tracked_hashkey }},
+        {% for col in additional_columns -%}
+        {{ col }},
+        {% endfor -%}
         {{ src_ldts }},
         {{ src_rsrc }}
     FROM {{ source_relation }} src
@@ -58,6 +63,9 @@ current_status_prep AS (
 
     SELECT
         {{ tracked_hashkey }},
+        {% for col in additional_columns -%}
+        {{ col }},
+        {% endfor -%}
         {{ is_active_alias}},
         {{ src_rsrc }},
         ROW_NUMBER() OVER (PARTITION BY {{ tracked_hashkey }} ORDER BY {{ src_ldts }} DESC) as rn
@@ -69,16 +77,19 @@ current_status AS (
 
     SELECT
         {{ tracked_hashkey }},
+        {% for col in additional_columns -%}
+        {{ col }},
+        {% endfor -%}
         {{ is_active_alias }},
         {{ src_rsrc }}
     FROM current_status_prep
-    WHERE rn = 1 
+    WHERE rn = 1
 
 ),
 {% endif %}
 
 {#
-    This block is for multi-batch processing. 
+    This block is for multi-batch processing.
 #}
 {% if not source_is_single_batch %}
 
@@ -87,7 +98,7 @@ current_status AS (
     #}
     hashkeys AS (
 
-        SELECT 
+        SELECT
             {{ tracked_hashkey }},
             MIN({{ src_ldts }}) as first_appearance
         FROM source_data
@@ -103,7 +114,7 @@ current_status AS (
         SELECT Distinct
             {{ src_ldts }}
         FROM source_data
-        
+
     ),
 
     {#
@@ -111,7 +122,7 @@ current_status AS (
     #}
     history AS (
 
-        SELECT 
+        SELECT
             hk.{{ tracked_hashkey }},
             ld.{{ src_ldts }}
         FROM hashkeys hk
@@ -129,11 +140,14 @@ current_status AS (
 
         SELECT
             h.{{ tracked_hashkey }},
+            {% for col in additional_columns -%}
+            src.{{ col }},
+            {% endfor -%}
             h.{{ src_ldts }},
             COALESCE(src.{{ src_rsrc }}, '{{ unknown_value_rsrc }}') AS {{ src_rsrc }},
-            CASE 
+            CASE
                 WHEN src.{{ tracked_hashkey }} IS NULL THEN 0
-                ELSE 1 
+                ELSE 1
             END as {{ is_active_alias }}
         FROM history h
         LEFT JOIN source_data src
@@ -143,12 +157,15 @@ current_status AS (
     ),
 
     {#
-        The rows are deduplicated on the is_active_alias, to only include status changes. 
+        The rows are deduplicated on the is_active_alias, to only include status changes.
     #}
     deduplicated_incoming_prep AS (
 
         SELECT
             is_active.{{ tracked_hashkey }},
+            {% for col in additional_columns -%}
+            is_active.{{ col }},
+            {% endfor -%}
             is_active.{{ src_ldts }},
             is_active.{{ src_rsrc }},
             is_active.{{ is_active_alias }},
@@ -162,6 +179,9 @@ current_status AS (
 
         SELECT
             deduplicated_incoming_prep.{{ tracked_hashkey }},
+            {% for col in additional_columns -%}
+            deduplicated_incoming_prep.{{ col }},
+            {% endfor -%}
             deduplicated_incoming_prep.{{ src_ldts }},
             deduplicated_incoming_prep.{{ src_rsrc }},
             deduplicated_incoming_prep.{{ is_active_alias }}
@@ -188,13 +208,16 @@ current_status AS (
 
         SELECT DISTINCT
             src.{{ tracked_hashkey }},
+            {% for col in additional_columns -%}
+            src.{{ col }},
+            {% endfor -%}
             src.{{ src_ldts }},
             src.{{ src_rsrc }},
             1 as {{ is_active_alias }}
         FROM source_data src
 
         {#
-            For incremental runs of single-batch eff sats, only hashkeys that are not active right now are set to active. 
+            For incremental runs of single-batch eff sats, only hashkeys that are not active right now are set to active.
             This automatically includes totally new hashkeys, or hashkeys that are currently set to inactive.
         #}
         {% if is_incremental() %}
@@ -211,22 +234,25 @@ current_status AS (
 {% endif %}
 
 {#
-    In all incremental runs, the source needs to be scanned for all currently active hashkeys. 
-    If they are no longer present, they will be deactived. 
+    In all incremental runs, the source needs to be scanned for all currently active hashkeys.
+    If they are no longer present, they will be deactived.
 #}
 {%- if is_incremental() %}
 
     {%- if not source_is_single_batch %}
         disappeared_hashkeys AS (
 
-            SELECT DISTINCT 
+            SELECT DISTINCT
                 cs.{{ tracked_hashkey }},
+                {% for col in additional_columns -%}
+                null as {{ col }},
+                {% endfor -%}
                 ldts.min_ldts as {{ src_ldts }},
                 '{{unknown_value_rsrc}}' AS {{ src_rsrc }},
                 0 as {{ is_active_alias }}
             FROM current_status cs
             LEFT JOIN (
-                SELECT 
+                SELECT
                     MIN({{ src_ldts }}) as min_ldts
                 FROM deduplicated_incoming) ldts
                 ON 1 = 1
@@ -242,20 +268,23 @@ current_status AS (
     {% else %}
         disappeared_hashkeys AS (
 
-            SELECT DISTINCT 
+            SELECT DISTINCT
                 cs.{{ tracked_hashkey }},
+                {% for col in additional_columns -%}
+                null as {{ col }},
+                {% endfor -%}
                 ldts.min_ldts as {{ src_ldts }},
                 '{{unknown_value_rsrc}}' AS {{ src_rsrc }},
                 0 as {{ is_active_alias }}
             FROM current_status cs
             LEFT JOIN (
-                SELECT 
+                SELECT
                     MIN({{ src_ldts }}) as min_ldts
                 FROM source_data) ldts
                 ON 1 = 1
             WHERE NOT EXISTS (
-                SELECT 
-                    1 
+                SELECT
+                    1
                 FROM source_data src
                 WHERE src.{{ tracked_hashkey }} = cs.{{ tracked_hashkey }}
             )
@@ -275,6 +304,9 @@ records_to_insert AS (
     #}
     SELECT
         di.{{ tracked_hashkey }},
+        {% for col in additional_columns -%}
+        di.{{ col }},
+        {% endfor -%}
         di.{{ src_ldts }},
         di.{{ src_rsrc }},
         di.{{ is_active_alias }}
@@ -284,9 +316,9 @@ records_to_insert AS (
     {%- if is_incremental() %}
 
         {#
-            For incremental multi-batch loads, the earliest to-be inserted status is compared to the current status. 
-            It will only be inserted if the status changed. 
-        #} 
+            For incremental multi-batch loads, the earliest to-be inserted status is compared to the current status.
+            It will only be inserted if the status changed.
+        #}
         {%- if not source_is_single_batch %}
             WHERE NOT EXISTS (
                 SELECT 1
@@ -305,17 +337,23 @@ records_to_insert AS (
 
     SELECT
         {{ tracked_hashkey }},
+        {% for col in additional_columns -%}
+        {{ col }},
+        {% endfor -%}
         {{ src_ldts }},
         {{ src_rsrc }},
         {{ is_active_alias }}
     FROM disappeared_hashkeys
 
-    {%- endif %}    
+    {%- endif %}
 
 )
 
-SELECT 
+SELECT
     {{ tracked_hashkey }},
+    {% for col in additional_columns -%}
+    {{ col }},
+    {% endfor -%}
     {{ src_ldts }},
     {{ src_rsrc }},
     cast({{ is_active_alias }} as {{ is_active_datatype }}) as {{ is_active_alias }}
